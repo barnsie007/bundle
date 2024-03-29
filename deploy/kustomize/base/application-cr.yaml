@@ -6,7 +6,8 @@ metadata:
   name: modresorts
 spec:
   replicas: 1
-  applicationImage: default-route-openshift-image-registry.apps.kgta.cp.fyre.ibm.com/jc/mod:friday
+  #applicationImage: default-route-openshift-image-registry.apps.kgta.cp.fyre.ibm.com/jc/mod:friday
+  applicationImage: image-registry.openshift-image-registry.svc:5000/jc/mod:friday
   expose: true
   volumeMounts:
     - mountPath: /config/variables
