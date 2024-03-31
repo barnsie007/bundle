@@ -6,7 +6,7 @@ metadata:
   name: modresorts
 spec:
   replicas: 1
-  applicationImage: cp.stg.icr.io/cp/transformation-advisor-ui:3.9.1
+  applicationImage: default-route-openshift-image-registry.apps.kgta.cp.fyre.ibm.com/jc/mod:friday
   expose: true
   volumeMounts:
     - mountPath: /config/variables
