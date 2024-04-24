@@ -6,7 +6,7 @@ metadata:
   name: modresorts
 spec:
   replicas: 1
-  applicationImage: default-route-openshift-image-registry.apps.wca4ej-martin-04230359.cp.fyre.ibm.com/wlmod/mod:2.0
+  applicationImage: default-route-openshift-image-registry.apps.ta1.cp.fyre.ibm.com/wlmod/mod:1.0
   expose: true
   volumeMounts:
     - mountPath: /config/variables
