@@ -20,6 +20,169 @@ You have the option to:
 
 # How to deploy a single application
 
+## A source project
+### Overview
+When migrating an application, you will often need to make changes to the source code to ensure a successful migration to the new target platform.
+The exact nature of the changes will vary from application to application.
+Transformation Advisor reports on the changes necessary for each individual application and will classify applications that require code changes as either Moderate or Complex.
+
+[IBM watsonx Code Assistant for Enterprise Java Applications](https://ibm.biz/ta-wca-appmod) leverages the power of IBM’s Granite foundation large language model to provide features such as code change explanation, migrating projects from the WebSphere Application Server to WebSphere Liberty, upgrade the Maven Liberty project to the latest Java version, and create integration tests for specific use cases. By using this tool, Java developers can expect improvements in their coding speed and efficiency. We recommend using [Watsonx Code Assistant for Enterprise Java Applications](https://ibm.biz/ta-wca-appmod) to make any necessary code changes. 
+
+
+The following tasks help you build your source code to an image.
+
+### Tasks
+1. Navigate to the migration bundle
+   ```
+    cd <MIGRATION_ARTIFACTS_HOME>
+    ```
+2. Edit the pom.xml file and update or delete the placeholder values with the appropriate values
+   1. Set the correct values for the ```<dependency>``` element
+   2. Set the correct values for each of the ```<artifactItem>``` elements    
+      &nbsp;
+3. Update the pom.xml file to build the application according to your specifications
+   1. NOTE: If you already have a pom.xml for your application then you can use that, or merge with the migration bundle pom.xml as appropriate    
+      &nbsp;
+4. Edit the Containerfile so that source code will be built during the image build
+   1. Uncomment the line ```RUN mvn clean package	```
+
+
+# How to deploy a cluster or group of applications
+
+This section covers how to use the migration bundle for a cluster or group to deploy multiple applications to a single Liberty container.    
+You can migrate each application individually first and then merge them into a single deployment, or you can deploy them all at once as a single first step.
+
+If you are migrating a cluster then it is unlikely that you will get a clash of features between your applications. In this case the "All applications at once approach" will be the fastest approach to migrate your cluster.
+
+If you are migrating a group then it is more likely that you may get a feature clash when deploying the applications together, because the applications may not have run together before. It is recommended to take the "All applications at once approach" but if you encounter issues, it is recommended to take the "Application by application" approach to resolve them.
+
+## All applications at once
+
+You can migrate all your applications in three steps. This document will reference the following variables:
+
+- `<APP_CONTEXT_ROOT>` is the context root for your application. If not defined elsewhere, for example in ibm-web-ext-xml, this corresponds to the `name` attribute in the `<application>` element of the server.xml.
+- `<APPLICATION_NAME>` is the name of the application.
+- `<MIGRATION_ARTIFACTS_HOME>` is the location where you have unzipped the Transformation Advisor artifacts, or cloned the repository.
+- `<IMAGE_REFERENCE>` is the reference for this image, including the registry, repository and tag, e.g. docker.io/myspace/myappimage:1.0.0
+
+### STEP ONE: Gather applications and dependency files and update configuration
+In this step you will gather your application files and any dependencies and update the configuration files.
+
+### Step 1 Tasks
+1. Add your application file(s) to the migration bundle, and remove the placeholder files:
+    ```
+    cp <BINARY_FILE_LOCATION>/<APPLICATION_FILE> <MIGRATION_ARTIFACTS_HOME>/target/
+    rm <MIGRATION_ARTIFACTS_HOME>/target/*.placeholder
+    ```
+2. Add your dependency file(s) to the migration bundle, and remove the placeholder file(s):
+    ```
+    cp <DEPENDENCY_FILE_LOCATION>/* <MIGRATION_ARTIFACTS_HOME>/src/main/liberty/lib
+    rm <MIGRATION_ARTIFACTS_HOME>/src/main/liberty/lib/*.placeholder
+    ```
+   ```NOTE: The placeholder files provide the name(s) of all dependencies for your application```        
+   &nbsp;    
+   ```NOTE: If you are using maven to import your application and dependencies you can skip task 1 & 2 of this step```       
+   &nbsp;
+4. Update any application server.xml files if necessary:
+   - The server.xml file at `<MIGRATION_ARTIFACTS_HOME>/src/main/liberty/config` contains a series of includes, that include the server.xml files for each application
+   - The application server.xml files can be found in the following locations: `<MIGRATION_ARTIFACTS_HOME>/apps/<APPLICATION_NAME>/src/main/liberty/config`
+   - The name of the server.xml file for each application will be `<APPLICATION_NAME>_server_config.xml`
+   - Modify each server.xml files by entering default values for any sensitive data that Transformation Advisor has removed.
+   - If there are any additional binaries listed in the server.xml file that you do not need, remove any reference to them.
+
+NOTE: Only set default value for the variables defined in the server.xml file.  If the value is set in the server.xml file,  they cannot be overrode during the deployment time.
+
+
+### STEP TWO: Containerize all applications on Liberty
+In this step you will containerize your working Liberty installation. You will create a Liberty image that has all your migrated applications installed and working, and then test the image to confirm that it is operating correctly.
+
+`NOTE: If you are using podman instead of docker simply replace the word docker in each command with podman`
+
+### Step 2 Prerequisites
+- You have completed Step 1: Gather applications and dependency files and update configuration
+- Docker or podman is installed.
+   - Download Docker: https://www.docker.com/get-started
+   - Download podman: https://podman.io/getting-started/installation
+- The machine where you complete this task requires access to the internet to download the Liberty base image.
+
+### Step 2 Tasks
+1. If using docker ensure the docker service is running. If it’s not, start it:
+```
+service docker start
+```
+2. Go to where your migration artifacts are located and build your image from the docker file:
+```
+cd <MIGRATION_ARTIFACTS_HOME>
+docker build --no-cache -t "<IMAGE_REFERENCE>" -f Containerfile .
+```
+Note: The migration bundle includes a pom.xml file that allows the application and all dependencies to be pulled from Maven.  You need to enable this option in the Containerfile and update the placeholders in the pom.xml file with correct values.
+The details of how to do this can be found in the '[Add dependencies using Maven](#add-dependencies-using-maven)' section.
+
+4. Run the image and confirm that it is working correctly:
+```
+docker run –p 9080:9080 <IMAGE_REFERENCE>
+```
+5. If everything looks good, the image has been started and mapped to the port 9080.    
+   You can access it from your browser with this link:
+   `http://<LIBERTY_HOME_MACHINE_IP>:9080/>`    
+   &nbsp;
+
+6. Each application will be available at `http://<LIBERTY_HOME_MACHINE_IP>:9080/<APP_CONTEXT_ROOT>`    
+   &nbsp;
+
+7. **Optional:** Check your image when it is up and running by logging into the container:
+```
+docker exec –ti <CONTAINER_ID> bash
+```
+This allows you to browse the file system of the container where your applications are running.
+
+### STEP THREE: Deploy your image with all applications to Red Hat OpenShift
+In this step you will deploy the image you have created to Red Hat OpenShift. These instructions relate to OpenShift 4+ and have been validated on OpenShift 4.10.
+Follow the same steps as if your image had a single application - see [here](#deploy-your-image-to-red-hat-openshift)
+
+
+## A binary project - application by application
+In this approach you will configure, containerize and deploy each application individually, and then deploy them together
+
+### Tasks
+1. Complete the steps for '[How to deploy a single application](#how-to-deploy-a-single-application)' for each application.
+```
+cd <MIGRATION_ARTIFACTS_HOME>/apps
+Deploy each application indvidually
+```
+2. Now deploy all applications together following these [steps](#all-applications-at-once)    
+   &nbsp;
+
+NOTE: You may have a feature conflict when you deploy applications together. In this case you need to either move the apps that are causing the conflict into another deployment, or update the applications so they no longer require conflicting features.
+
+# Managing keystores during deployment
+``` 
+When deploying to OpenShift, if your application is configured to use non default keystores then the default route will not work without configuration changes
+```
+## Configuring keystores in a container
+_NOTE: If you plan to deploy to OpenShift you can use the Operator to generate the necessary certificates, see the next section for details._
+
+Transformation Advisor does not automatically migrate keystore information in the migration bundle.    
+When running in a container using the default Containerfile produced by Transformation Advisor the Liberty server will output messages indicating that the non-default keystore files can not be found.
+
+For instructions on configuring keystores in Liberty server, see the Liberty [Configuring Security documentation](https://github.com/OpenLiberty/ci.docker/blob/main/SECURITY.md)
+
+## Configuring keystores in an OpenShift deployment
+When deploying to OpenShift you can use the Liberty Operator to generate all necessary certificates or use your own certificates.
+
+### Using the Liberty Operator to generate certificates
+Complete the following steps to use the Liberty Operator to generate the certificates for your application
+
+1. Modify the `server.xml` file and remove all `<keystore>` attributes.
+2. Build and deploy the image as normal
+
+In this case all certification generation and keystore management will be handled by the Operator.    
+Further details on this can be found in the [Liberty documentation](https://www.ibm.com/docs/en/was-liberty/core?topic=applications-configuring-tls-certificates)
+
+### Using your own certificate and keystores in OpenShift
+You can configure your deployment to use your own certificates and manage the security yourself.    
+Further details on this can be found in the Liberty documentation for [specifying certificates](https://www.ibm.com/docs/en/was-liberty/core?topic=applications-configuring-tls-certificates#cfg-t-sec-cert__sec-route-service)
+
 ## A binary project
 The following section describes how to deploy a binary based project to Red Hat&trade; OpenShift. For the binary project, you will provide binary files for the application and any dependencies.
 
@@ -256,165 +419,3 @@ The migration bundle includes a pom.xml file that allows the application and all
    1. Uncomment the line ```RUN mvn -X initialize process-resources verify```
 
 
-## A source project
-### Overview
-When migrating an application, you will often need to make changes to the source code to ensure a successful migration to the new target platform.
-The exact nature of the changes will vary from application to application.
-Transformation Advisor reports on the changes necessary for each individual application and will classify applications that require code changes as either Moderate or Complex.
-
-[Watsonx Code Assistant for Enterprise Java Applications](https://ibm.biz/ta-wca-appmod) leverages the power of IBM’s Granite foundation large language model to provide features such as code change explanation, migrating projects from the WebSphere Application Server to WebSphere Liberty, upgrade the Maven Liberty project to the latest Java version, and create integration tests for specific use cases. By using this tool, Java developers can expect improvements in their coding speed and efficiency. We recommend using [Watsonx Code Assistant for Enterprise Java Applications](https://ibm.biz/ta-wca-appmod) to make any necessary code changes. 
-
-
-The following tasks help you build your source code to an image.
-
-### Tasks
-1. Navigate to the migration bundle
-   ```
-    cd <MIGRATION_ARTIFACTS_HOME>
-    ```
-2. Edit the pom.xml file and update or delete the placeholder values with the appropriate values
-   1. Set the correct values for the ```<dependency>``` element
-   2. Set the correct values for each of the ```<artifactItem>``` elements    
-      &nbsp;
-3. Update the pom.xml file to build the application according to your specifications
-   1. NOTE: If you already have a pom.xml for your application then you can use that, or merge with the migration bundle pom.xml as appropriate    
-      &nbsp;
-4. Edit the Containerfile so that source code will be built during the image build
-   1. Uncomment the line ```RUN mvn clean package	```
-
-
-# How to deploy a cluster or group of applications
-
-This section covers how to use the migration bundle for a cluster or group to deploy multiple applications to a single Liberty container.    
-You can migrate each application individually first and then merge them into a single deployment, or you can deploy them all at once as a single first step.
-
-If you are migrating a cluster then it is unlikely that you will get a clash of features between your applications. In this case the "All applications at once approach" will be the fastest approach to migrate your cluster.
-
-If you are migrating a group then it is more likely that you may get a feature clash when deploying the applications together, because the applications may not have run together before. It is recommended to take the "All applications at once approach" but if you encounter issues, it is recommended to take the "Application by application" approach to resolve them.
-
-## All applications at once
-
-You can migrate all your applications in three steps. This document will reference the following variables:
-
-- `<APP_CONTEXT_ROOT>` is the context root for your application. If not defined elsewhere, for example in ibm-web-ext-xml, this corresponds to the `name` attribute in the `<application>` element of the server.xml.
-- `<APPLICATION_NAME>` is the name of the application.
-- `<MIGRATION_ARTIFACTS_HOME>` is the location where you have unzipped the Transformation Advisor artifacts, or cloned the repository.
-- `<IMAGE_REFERENCE>` is the reference for this image, including the registry, repository and tag, e.g. docker.io/myspace/myappimage:1.0.0
-
-### STEP ONE: Gather applications and dependency files and update configuration
-In this step you will gather your application files and any dependencies and update the configuration files.
-
-### Step 1 Tasks
-1. Add your application file(s) to the migration bundle, and remove the placeholder files:
-    ```
-    cp <BINARY_FILE_LOCATION>/<APPLICATION_FILE> <MIGRATION_ARTIFACTS_HOME>/target/
-    rm <MIGRATION_ARTIFACTS_HOME>/target/*.placeholder
-    ```
-2. Add your dependency file(s) to the migration bundle, and remove the placeholder file(s):
-    ```
-    cp <DEPENDENCY_FILE_LOCATION>/* <MIGRATION_ARTIFACTS_HOME>/src/main/liberty/lib
-    rm <MIGRATION_ARTIFACTS_HOME>/src/main/liberty/lib/*.placeholder
-    ```
-   ```NOTE: The placeholder files provide the name(s) of all dependencies for your application```        
-   &nbsp;    
-   ```NOTE: If you are using maven to import your application and dependencies you can skip task 1 & 2 of this step```       
-   &nbsp;
-4. Update any application server.xml files if necessary:
-   - The server.xml file at `<MIGRATION_ARTIFACTS_HOME>/src/main/liberty/config` contains a series of includes, that include the server.xml files for each application
-   - The application server.xml files can be found in the following locations: `<MIGRATION_ARTIFACTS_HOME>/apps/<APPLICATION_NAME>/src/main/liberty/config`
-   - The name of the server.xml file for each application will be `<APPLICATION_NAME>_server_config.xml`
-   - Modify each server.xml files by entering default values for any sensitive data that Transformation Advisor has removed.
-   - If there are any additional binaries listed in the server.xml file that you do not need, remove any reference to them.
-
-NOTE: Only set default value for the variables defined in the server.xml file.  If the value is set in the server.xml file,  they cannot be overrode during the deployment time.
-
-
-### STEP TWO: Containerize all applications on Liberty
-In this step you will containerize your working Liberty installation. You will create a Liberty image that has all your migrated applications installed and working, and then test the image to confirm that it is operating correctly.
-
-`NOTE: If you are using podman instead of docker simply replace the word docker in each command with podman`
-
-### Step 2 Prerequisites
-- You have completed Step 1: Gather applications and dependency files and update configuration
-- Docker or podman is installed.
-   - Download Docker: https://www.docker.com/get-started
-   - Download podman: https://podman.io/getting-started/installation
-- The machine where you complete this task requires access to the internet to download the Liberty base image.
-
-### Step 2 Tasks
-1. If using docker ensure the docker service is running. If it’s not, start it:
-```
-service docker start
-```
-2. Go to where your migration artifacts are located and build your image from the docker file:
-```
-cd <MIGRATION_ARTIFACTS_HOME>
-docker build --no-cache -t "<IMAGE_REFERENCE>" -f Containerfile .
-```
-Note: The migration bundle includes a pom.xml file that allows the application and all dependencies to be pulled from Maven.  You need to enable this option in the Containerfile and update the placeholders in the pom.xml file with correct values.
-The details of how to do this can be found in the '[Add dependencies using Maven](#add-dependencies-using-maven)' section.
-
-4. Run the image and confirm that it is working correctly:
-```
-docker run –p 9080:9080 <IMAGE_REFERENCE>
-```
-5. If everything looks good, the image has been started and mapped to the port 9080.    
-   You can access it from your browser with this link:
-   `http://<LIBERTY_HOME_MACHINE_IP>:9080/>`    
-   &nbsp;
-
-6. Each application will be available at `http://<LIBERTY_HOME_MACHINE_IP>:9080/<APP_CONTEXT_ROOT>`    
-   &nbsp;
-
-7. **Optional:** Check your image when it is up and running by logging into the container:
-```
-docker exec –ti <CONTAINER_ID> bash
-```
-This allows you to browse the file system of the container where your applications are running.
-
-### STEP THREE: Deploy your image with all applications to Red Hat OpenShift
-In this step you will deploy the image you have created to Red Hat OpenShift. These instructions relate to OpenShift 4+ and have been validated on OpenShift 4.10.
-Follow the same steps as if your image had a single application - see [here](#deploy-your-image-to-red-hat-openshift)
-
-
-## A binary project - application by application
-In this approach you will configure, containerize and deploy each application individually, and then deploy them together
-
-### Tasks
-1. Complete the steps for '[How to deploy a single application](#how-to-deploy-a-single-application)' for each application.
-```
-cd <MIGRATION_ARTIFACTS_HOME>/apps
-Deploy each application indvidually
-```
-2. Now deploy all applications together following these [steps](#all-applications-at-once)    
-   &nbsp;
-
-NOTE: You may have a feature conflict when you deploy applications together. In this case you need to either move the apps that are causing the conflict into another deployment, or update the applications so they no longer require conflicting features.
-
-# Managing keystores during deployment
-``` 
-When deploying to OpenShift, if your application is configured to use non default keystores then the default route will not work without configuration changes
-```
-## Configuring keystores in a container
-_NOTE: If you plan to deploy to OpenShift you can use the Operator to generate the necessary certificates, see the next section for details._
-
-Transformation Advisor does not automatically migrate keystore information in the migration bundle.    
-When running in a container using the default Containerfile produced by Transformation Advisor the Liberty server will output messages indicating that the non-default keystore files can not be found.
-
-For instructions on configuring keystores in Liberty server, see the Liberty [Configuring Security documentation](https://github.com/OpenLiberty/ci.docker/blob/main/SECURITY.md)
-
-## Configuring keystores in an OpenShift deployment
-When deploying to OpenShift you can use the Liberty Operator to generate all necessary certificates or use your own certificates.
-
-### Using the Liberty Operator to generate certificates
-Complete the following steps to use the Liberty Operator to generate the certificates for your application
-
-1. Modify the `server.xml` file and remove all `<keystore>` attributes.
-2. Build and deploy the image as normal
-
-In this case all certification generation and keystore management will be handled by the Operator.    
-Further details on this can be found in the [Liberty documentation](https://www.ibm.com/docs/en/was-liberty/core?topic=applications-configuring-tls-certificates)
-
-### Using your own certificate and keystores in OpenShift
-You can configure your deployment to use your own certificates and manage the security yourself.    
-Further details on this can be found in the Liberty documentation for [specifying certificates](https://www.ibm.com/docs/en/was-liberty/core?topic=applications-configuring-tls-certificates#cfg-t-sec-cert__sec-route-service)
